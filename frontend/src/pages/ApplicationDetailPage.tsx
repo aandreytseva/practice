@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { applicationsApi } from '../api/applications'
 import { notesApi } from '../api/notes'
 import { remindersApi } from '../api/reminders'
+import { contactsApi, type Contact, type CreateContactPayload } from '../api/contacts'
 import type { JobApplication, Note, Reminder, StatusHistoryEntry, ApplicationStatus } from '../types'
 import { STATUS_LABELS, STATUS_TRANSITIONS, SOURCE_LABELS } from '../types'
 import Badge from '../components/ui/Badge'
@@ -10,7 +11,7 @@ import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
 import Input from '../components/ui/Input'
 
-type Tab = 'notes' | 'reminders' | 'history'
+type Tab = 'notes' | 'reminders' | 'history' | 'contacts'
 
 export default function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -21,8 +22,14 @@ export default function ApplicationDetailPage() {
   const [notes, setNotes] = useState<Note[]>([])
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [history, setHistory] = useState<StatusHistoryEntry[]>([])
+  const [contacts, setContacts] = useState<Contact[]>([])
   const [tab, setTab] = useState<Tab>('notes')
   const [loading, setLoading] = useState(true)
+
+  // Contact state
+  const [showContactModal, setShowContactModal] = useState(false)
+  const [contactForm, setContactForm] = useState<CreateContactPayload>({ name: '' })
+  const [savingContact, setSavingContact] = useState(false)
 
   // Note state
   const [noteText, setNoteText] = useState('')
@@ -48,13 +55,14 @@ export default function ApplicationDetailPage() {
     const load = async () => {
       setLoading(true)
       try {
-        const [a, n, r, h] = await Promise.all([
+        const [a, n, r, h, c] = await Promise.all([
           applicationsApi.getById(appId),
           notesApi.getAll(appId),
           remindersApi.getAll(appId),
           applicationsApi.getHistory(appId),
+          contactsApi.getAll(appId),
         ])
-        setApp(a); setNotes(n); setReminders(r); setHistory(h)
+        setApp(a); setNotes(n); setReminders(r); setHistory(h); setContacts(c)
       } finally {
         setLoading(false)
       }
@@ -126,6 +134,25 @@ export default function ApplicationDetailPage() {
     }
   }
 
+  /* ── Contacts ── */
+  const handleCreateContact = async () => {
+    if (!contactForm.name.trim()) return
+    setSavingContact(true)
+    try {
+      const c = await contactsApi.create(appId, contactForm)
+      setContacts((prev) => [...prev, c])
+      setShowContactModal(false)
+      setContactForm({ name: '' })
+    } finally {
+      setSavingContact(false)
+    }
+  }
+
+  const handleDeleteContact = async (contactId: number) => {
+    await contactsApi.delete(appId, contactId)
+    setContacts((prev) => prev.filter((c) => c.id !== contactId))
+  }
+
   /* ── Delete ── */
   const handleDelete = async () => {
     await applicationsApi.delete(appId)
@@ -175,13 +202,16 @@ export default function ApplicationDetailPage() {
         {/* Tabs */}
         <div className="md:col-span-2 flex flex-col gap-4">
           <div className="flex gap-1 bg-white rounded-xl border border-gray-200 p-1">
-            {(['notes', 'reminders', 'history'] as Tab[]).map((t) => (
+            {(['notes', 'contacts', 'reminders', 'history'] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
                 className={`flex-1 rounded-lg py-1.5 text-sm font-medium transition-colors cursor-pointer ${tab === t ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
               >
-                {t === 'notes' ? `Notes (${notes.length})` : t === 'reminders' ? `Reminders (${reminders.length})` : 'History'}
+                {t === 'notes' ? `Notes (${notes.length})`
+                  : t === 'contacts' ? `Contacts (${contacts.length})`
+                  : t === 'reminders' ? `Reminders (${reminders.length})`
+                  : 'History'}
               </button>
             ))}
           </div>
@@ -216,6 +246,32 @@ export default function ApplicationDetailPage() {
                       <button onClick={() => handleDeleteNote(note.id)} className="hover:text-red-500 cursor-pointer">Delete</button>
                     </div>
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Contacts */}
+          {tab === 'contacts' && (
+            <div className="flex flex-col gap-3">
+              <div className="flex justify-end">
+                <Button size="sm" onClick={() => setShowContactModal(true)}>+ Add Contact</Button>
+              </div>
+              {contacts.length === 0 && <p className="text-sm text-gray-400 text-center py-6">No contacts yet</p>}
+              {contacts.map((c) => (
+                <div key={c.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-start justify-between gap-3">
+                  <div className="flex flex-col gap-0.5">
+                    <p className="text-sm font-semibold text-gray-900">{c.name}</p>
+                    {c.role && <p className="text-xs text-indigo-600">{c.role}</p>}
+                    {c.email && (
+                      <a href={`mailto:${c.email}`} className="text-xs text-gray-500 hover:text-indigo-600">{c.email}</a>
+                    )}
+                    {c.phone && <p className="text-xs text-gray-500">{c.phone}</p>}
+                    {c.linkedinUrl && (
+                      <a href={c.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">LinkedIn ↗</a>
+                    )}
+                  </div>
+                  <Button size="sm" variant="danger" onClick={() => handleDeleteContact(c.id)}>×</Button>
                 </div>
               ))}
             </div>
@@ -312,6 +368,21 @@ export default function ApplicationDetailPage() {
           <div className="flex justify-end gap-2 mt-1">
             <Button variant="secondary" onClick={() => setShowReminderModal(false)}>Cancel</Button>
             <Button onClick={handleCreateReminder} loading={savingReminder} disabled={!reminderTitle || !reminderAt}>Create</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Contact modal */}
+      <Modal open={showContactModal} title="Add Contact" onClose={() => setShowContactModal(false)}>
+        <div className="flex flex-col gap-3">
+          <Input label="Name *" value={contactForm.name} onChange={(e) => setContactForm((f) => ({ ...f, name: e.target.value }))} placeholder="Anna Schmidt" />
+          <Input label="Role" value={contactForm.role ?? ''} onChange={(e) => setContactForm((f) => ({ ...f, role: e.target.value }))} placeholder="HR Manager" />
+          <Input label="Email" type="email" value={contactForm.email ?? ''} onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value }))} placeholder="anna@company.com" />
+          <Input label="Phone" value={contactForm.phone ?? ''} onChange={(e) => setContactForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+373 60 000 000" />
+          <Input label="LinkedIn URL" value={contactForm.linkedinUrl ?? ''} onChange={(e) => setContactForm((f) => ({ ...f, linkedinUrl: e.target.value }))} placeholder="https://linkedin.com/in/..." />
+          <div className="flex justify-end gap-2 mt-1">
+            <Button variant="secondary" onClick={() => setShowContactModal(false)}>Cancel</Button>
+            <Button onClick={handleCreateContact} loading={savingContact} disabled={!contactForm.name.trim()}>Add</Button>
           </div>
         </div>
       </Modal>

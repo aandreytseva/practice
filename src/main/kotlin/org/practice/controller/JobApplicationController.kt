@@ -1,6 +1,7 @@
 package org.practice.controller
 
 import jakarta.validation.Valid
+import org.practice.domain.enums.ApplicationSource
 import org.practice.domain.enums.ApplicationStatus
 import org.practice.dto.request.CreateJobApplicationRequest
 import org.practice.dto.request.UpdateJobApplicationRequest
@@ -12,10 +13,12 @@ import org.practice.service.JobApplicationService
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.web.PageableDefault
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.core.userdetails.UserDetails
 import org.springframework.web.bind.annotation.*
+import java.time.LocalDate
 
 @RestController
 @RequestMapping("/api/applications")
@@ -31,9 +34,17 @@ class JobApplicationController(private val service: JobApplicationService) {
     @GetMapping
     fun getAll(
         @AuthenticationPrincipal user: UserDetails,
+        @RequestParam(required = false) search: String?,
         @RequestParam(required = false) status: ApplicationStatus?,
-        @PageableDefault(size = 20, sort = ["createdAt"]) pageable: Pageable
-    ): Page<JobApplicationResponse> = service.getAll(user.username, status, pageable)
+        @RequestParam(required = false) source: ApplicationSource?,
+        @RequestParam(required = false) salaryMin: Int?,
+        @RequestParam(required = false) salaryMax: Int?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) appliedFrom: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) appliedTo: LocalDate?,
+        @PageableDefault(size = 200, sort = ["createdAt"]) pageable: Pageable
+    ): Page<JobApplicationResponse> = service.getAll(
+        user.username, search, status, source, salaryMin, salaryMax, appliedFrom, appliedTo, pageable
+    )
 
     @GetMapping("/{id}")
     fun getById(

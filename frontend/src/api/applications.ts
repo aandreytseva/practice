@@ -15,7 +15,17 @@ export interface CreateApplicationPayload {
 export interface UpdateApplicationPayload extends Partial<CreateApplicationPayload> {}
 
 export const applicationsApi = {
-  getAll: (params?: { status?: ApplicationStatus; page?: number; size?: number }) =>
+  getAll: (params?: {
+    search?: string
+    status?: ApplicationStatus
+    source?: string
+    salaryMin?: number
+    salaryMax?: number
+    appliedFrom?: string
+    appliedTo?: string
+    page?: number
+    size?: number
+  }) =>
     client.get<Page<JobApplication>>('/applications', { params }).then((r) => r.data),
 
   getById: (id: number) =>

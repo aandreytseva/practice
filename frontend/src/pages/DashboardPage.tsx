@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { applicationsApi, type CreateApplicationPayload } from '../api/applications'
 import type { JobApplication, StatsResponse, ApplicationSource } from '../types'
@@ -7,6 +7,7 @@ import KanbanBoard from '../components/kanban/KanbanBoard'
 import Modal from '../components/ui/Modal'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
+import FilterBar, { type Filters } from '../components/ui/FilterBar'
 
 const SOURCES: ApplicationSource[] = ['HH_RU', 'LINKEDIN', 'HABR_CAREER', 'COMPANY_WEBSITE', 'REFERRAL', 'OTHER']
 
@@ -17,6 +18,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [filters, setFilters] = useState<Filters>({ search: '', source: '', salaryMin: '', salaryMax: '' })
   const [form, setForm] = useState<CreateApplicationPayload>({
     companyName: '',
     position: '',
@@ -24,7 +26,7 @@ export default function DashboardPage() {
     jobUrl: '',
     salaryMin: undefined,
     salaryMax: undefined,
-    currency: 'RUB',
+    currency: 'EUR',
   })
 
   const fetchAll = async () => {
@@ -43,6 +45,22 @@ export default function DashboardPage() {
 
   useEffect(() => { fetchAll() }, [])
 
+  // Client-side filtering
+  const filtered = useMemo(() => {
+    return applications.filter((app) => {
+      if (filters.search) {
+        const q = filters.search.toLowerCase()
+        if (!app.companyName.toLowerCase().includes(q) && !app.position.toLowerCase().includes(q)) return false
+      }
+      if (filters.source && app.source !== filters.source) return false
+      if (filters.salaryMin && (app.salaryMin ?? 0) < Number(filters.salaryMin)) return false
+      if (filters.salaryMax && (app.salaryMax ?? Infinity) > Number(filters.salaryMax)) return false
+      return true
+    })
+  }, [applications, filters])
+
+  const handleFiltersChange = useCallback((f: Filters) => setFilters(f), [])
+
   const handleCreate = async () => {
     if (!form.companyName || !form.position) return
     setSaving(true)
@@ -54,7 +72,7 @@ export default function DashboardPage() {
         byStatus: { ...prev.byStatus, APPLIED: (prev.byStatus.APPLIED ?? 0) + 1 }
       } : prev)
       setShowModal(false)
-      setForm({ companyName: '', position: '', source: 'OTHER', jobUrl: '', currency: 'RUB' })
+      setForm({ companyName: '', position: '', source: 'OTHER', jobUrl: '', currency: 'EUR' })
     } finally {
       setSaving(false)
     }
@@ -63,6 +81,8 @@ export default function DashboardPage() {
   const handleUpdate = (updated: JobApplication) => {
     setApplications((prev) => prev.map((a) => a.id === updated.id ? updated : a))
   }
+
+  const isFiltering = filters.search || filters.source || filters.salaryMin || filters.salaryMax
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -89,18 +109,23 @@ export default function DashboardPage() {
         )}
 
         {/* Header row */}
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-800">
-            Total: {stats?.total ?? '—'}
+            {isFiltering
+              ? `${filtered.length} of ${applications.length} shown`
+              : `Total: ${stats?.total ?? '—'}`}
           </h2>
           <Button onClick={() => setShowModal(true)}>+ Add Application</Button>
         </div>
+
+        {/* Filter bar */}
+        <FilterBar onChange={handleFiltersChange} />
 
         {/* Kanban */}
         {loading ? (
           <div className="text-center py-20 text-gray-400">Loading...</div>
         ) : (
-          <KanbanBoard applications={applications} onUpdate={handleUpdate} />
+          <KanbanBoard applications={filtered} onUpdate={handleUpdate} />
         )}
       </main>
 
@@ -111,7 +136,7 @@ export default function DashboardPage() {
             label="Company *"
             value={form.companyName}
             onChange={(e) => setForm((f) => ({ ...f, companyName: e.target.value }))}
-            placeholder="Google"
+            placeholder="Endava"
           />
           <Input
             label="Position *"
@@ -131,15 +156,28 @@ export default function DashboardPage() {
               type="number"
               value={form.salaryMin ?? ''}
               onChange={(e) => setForm((f) => ({ ...f, salaryMin: e.target.value ? +e.target.value : undefined }))}
-              placeholder="150000"
+              placeholder="2000"
             />
             <Input
               label="to"
               type="number"
               value={form.salaryMax ?? ''}
               onChange={(e) => setForm((f) => ({ ...f, salaryMax: e.target.value ? +e.target.value : undefined }))}
-              placeholder="200000"
+              placeholder="3500"
             />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-gray-700">Currency</label>
+            <select
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+              value={form.currency}
+              onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
+            >
+              <option value="EUR">EUR</option>
+              <option value="USD">USD</option>
+              <option value="MDL">MDL</option>
+              <option value="RON">RON</option>
+            </select>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-gray-700">Source</label>

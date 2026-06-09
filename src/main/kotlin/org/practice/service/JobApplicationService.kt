@@ -3,6 +3,7 @@ package org.practice.service
 import org.practice.domain.entity.JobApplication
 import org.practice.domain.entity.StatusHistory
 import org.practice.domain.repository.JobApplicationRepository
+import org.practice.domain.repository.JobApplicationSpec
 import org.practice.domain.repository.StatusHistoryRepository
 import org.practice.domain.repository.UserRepository
 import org.practice.dto.request.CreateJobApplicationRequest
@@ -11,14 +12,17 @@ import org.practice.dto.request.UpdateStatusRequest
 import org.practice.dto.response.JobApplicationResponse
 import org.practice.dto.response.StatsResponse
 import org.practice.dto.response.StatusHistoryResponse
+import org.practice.domain.enums.ApplicationSource
 import org.practice.domain.enums.ApplicationStatus
 import org.practice.exception.InvalidStatusTransitionException
 import org.practice.exception.ResourceNotFoundException
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
+import org.springframework.data.jpa.domain.Specification
 import org.springframework.security.core.userdetails.UsernameNotFoundException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDate
 import java.time.OffsetDateTime
 
 @Service
@@ -46,7 +50,6 @@ class JobApplicationService(
         )
         jobApplicationRepository.save(application)
 
-        // Initial status history record
         statusHistoryRepository.save(
             StatusHistory(
                 application = application,
@@ -59,13 +62,29 @@ class JobApplicationService(
     }
 
     @Transactional(readOnly = true)
-    fun getAll(email: String, status: ApplicationStatus?, pageable: Pageable): Page<JobApplicationResponse> {
+    fun getAll(
+        email: String,
+        search: String?,
+        status: ApplicationStatus?,
+        source: ApplicationSource?,
+        salaryMin: Int?,
+        salaryMax: Int?,
+        appliedFrom: LocalDate?,
+        appliedTo: LocalDate?,
+        pageable: Pageable
+    ): Page<JobApplicationResponse> {
         val user = userRepository.findByEmail(email).orElseThrow { UsernameNotFoundException(email) }
-        return if (status != null) {
-            jobApplicationRepository.findByUserIdAndStatus(user.id, status, pageable)
-        } else {
-            jobApplicationRepository.findByUserId(user.id, pageable)
-        }.map { JobApplicationResponse.from(it) }
+
+        var spec: Specification<JobApplication> = JobApplicationSpec.forUser(user.id)
+        if (!search.isNullOrBlank()) spec = spec.and(JobApplicationSpec.search(search))
+        if (status != null)          spec = spec.and(JobApplicationSpec.hasStatus(status))
+        if (source != null)          spec = spec.and(JobApplicationSpec.hasSource(source))
+        if (salaryMin != null)       spec = spec.and(JobApplicationSpec.salaryMinAtLeast(salaryMin))
+        if (salaryMax != null)       spec = spec.and(JobApplicationSpec.salaryMaxAtMost(salaryMax))
+        if (appliedFrom != null)     spec = spec.and(JobApplicationSpec.appliedFrom(appliedFrom))
+        if (appliedTo != null)       spec = spec.and(JobApplicationSpec.appliedTo(appliedTo))
+
+        return jobApplicationRepository.findAll(spec, pageable).map { JobApplicationResponse.from(it) }
     }
 
     @Transactional(readOnly = true)
